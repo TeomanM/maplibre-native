@@ -11,7 +11,7 @@ endif()
 message(STATUS "Configuring wgpu-native WebGPU implementation")
 
 set(_mln_wgpu_source_dir "${PROJECT_SOURCE_DIR}/vendor/wgpu-native")
-if ("${MLN_WEBGPU_IMPL_FFI_BUNDLED_WEBGPU_HEADER}" STREQUAL "")
+if ("${MLN_WEBGPU_IMPL_WEBGPU_HEADER_DIR}" STREQUAL "")
     set(WEBGPU_H_DIR ${_mln_wgpu_source_dir}/ffi/webgpu-headers)
 else()
     set(WEBGPU_H_DIR ${MLN_WEBGPU_IMPL_WEBGPU_HEADER_DIR})
