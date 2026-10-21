@@ -381,6 +381,8 @@ if(NOT "${ARMERGE}" STREQUAL "ARMERGE-NOTFOUND")
                 $<TARGET_FILE:mbgl-vendor-parsedate>
                 $<TARGET_FILE:mbgl-vendor-sqlite>
                 $<TARGET_FILE:mbgl-vendor-icu>
+                $<TARGET_FILE:mlt-cpp>
+                $<TARGET_FILE:fastpfor-lib>
                 ${STATIC_LIBS}
     )
 endif()
