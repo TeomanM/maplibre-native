@@ -15,11 +15,18 @@ include(${PROJECT_SOURCE_DIR}/vendor/sqlite.cmake)
 # Android AGP maps the release build variant to RelWithDebInfo (not Release), so we must
 # include RelWithDebInfo here to ensure these flags are actually applied.
 set(_OPT_CONFIGS "$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>")
-target_compile_options(mbgl-vendor-csscolorparser PRIVATE $<${_OPT_CONFIGS}:-Oz> $<${_OPT_CONFIGS}:-Qunused-arguments> $<${_OPT_CONFIGS}:-flto>)
-target_compile_options(mbgl-vendor-icu PRIVATE $<${_OPT_CONFIGS}:-Oz> $<${_OPT_CONFIGS}:-Qunused-arguments> $<${_OPT_CONFIGS}:-flto>)
-target_compile_options(mbgl-vendor-parsedate PRIVATE $<${_OPT_CONFIGS}:-Oz> $<${_OPT_CONFIGS}:-Qunused-arguments> $<${_OPT_CONFIGS}:-flto>)
-target_compile_options(mbgl-vendor-sqlite PRIVATE $<${_OPT_CONFIGS}:-Oz> $<${_OPT_CONFIGS}:-Qunused-arguments> $<${_OPT_CONFIGS}:-flto>)
-target_compile_options(mbgl-compiler-options INTERFACE $<${_OPT_CONFIGS}:-Oz> $<${_OPT_CONFIGS}:-Qunused-arguments> $<${_OPT_CONFIGS}:-flto>)
+# The FFI build is a static library linked by another toolchain (rustc), which can't read LLVM
+# bitcode objects (nor can armerge), so no LTO there.
+if(MLN_WEBGPU_IMPL_FFI)
+    set(_LTO_CONFIGS "0")
+else()
+    set(_LTO_CONFIGS "${_OPT_CONFIGS}")
+endif()
+target_compile_options(mbgl-vendor-csscolorparser PRIVATE $<${_OPT_CONFIGS}:-Oz> $<${_OPT_CONFIGS}:-Qunused-arguments> $<${_LTO_CONFIGS}:-flto>)
+target_compile_options(mbgl-vendor-icu PRIVATE $<${_OPT_CONFIGS}:-Oz> $<${_OPT_CONFIGS}:-Qunused-arguments> $<${_LTO_CONFIGS}:-flto>)
+target_compile_options(mbgl-vendor-parsedate PRIVATE $<${_OPT_CONFIGS}:-Oz> $<${_OPT_CONFIGS}:-Qunused-arguments> $<${_LTO_CONFIGS}:-flto>)
+target_compile_options(mbgl-vendor-sqlite PRIVATE $<${_OPT_CONFIGS}:-Oz> $<${_OPT_CONFIGS}:-Qunused-arguments> $<${_LTO_CONFIGS}:-flto>)
+target_compile_options(mbgl-compiler-options INTERFACE $<${_OPT_CONFIGS}:-Oz> $<${_OPT_CONFIGS}:-Qunused-arguments> $<${_LTO_CONFIGS}:-flto>)
 # cmake-format: on
 
 target_link_libraries(
@@ -27,7 +34,7 @@ target_link_libraries(
     INTERFACE
         $<${_OPT_CONFIGS}:-O2>
         $<${_OPT_CONFIGS}:-Wl,--icf=all>
-        $<${_OPT_CONFIGS}:-flto>
+        $<${_LTO_CONFIGS}:-flto>
         $<${_OPT_CONFIGS}:-fuse-ld=lld>
 )
 
@@ -77,6 +84,19 @@ target_sources(
         ${PROJECT_SOURCE_DIR}/platform/default/src/mln/util/utf.cpp
         ${PROJECT_SOURCE_DIR}/platform/default/src/mln/layermanager/layer_manager.cpp
 )
+
+if(MLN_WEBGPU_IMPL_FFI)
+    target_sources(
+        mbgl-core
+        PRIVATE
+            ${PROJECT_SOURCE_DIR}/platform/ffi/src/http_file_source.cpp
+			# TODO: Those stubs must be replaced by real functions
+			${PROJECT_SOURCE_DIR}/platform/android/src/test/collator_test_stub.cpp
+			${PROJECT_SOURCE_DIR}/platform/android/src/test/number_format_test_stub.cpp
+			${PROJECT_SOURCE_DIR}/platform/default/src/mln/text/local_glyph_rasterizer.cpp
+			${PROJECT_SOURCE_DIR}/platform/default/src/mln/util/logging_stderr.cpp
+    )
+endif()
 
 if(MLN_WITH_OPENGL)
     target_sources(
@@ -320,3 +340,47 @@ add_custom_command(
 )
 
 install(TARGETS mbgl-render-test-runner LIBRARY DESTINATION lib)
+
+find_program(ARMERGE NAMES armerge)
+
+if(NOT "${ARMERGE}" STREQUAL "ARMERGE-NOTFOUND")
+    message(STATUS "Found armerge: ${ARMERGE}")
+
+    # Detect NDK toolchain binaries for armerge
+    set(ARMERGE_LD "${ANDROID_TOOLCHAIN_ROOT}/bin/${ANDROID_TOOLCHAIN_PREFIX}ld")
+    set(ARMERGE_OBJCOPY "${ANDROID_TOOLCHAIN_ROOT}/bin/llvm-objcopy")
+    set(ARMERGE_RANLIB "${ANDROID_TOOLCHAIN_ROOT}/bin/llvm-ranlib")
+
+    include(${PROJECT_SOURCE_DIR}/cmake/find_static_library.cmake)
+    set(STATIC_LIBS "")
+
+    if(MLN_WITH_VULKAN)
+        find_static_library(STATIC_LIBS NAMES glslang)
+        find_static_library(STATIC_LIBS NAMES glslang-default-resource-limits)
+        find_static_library(STATIC_LIBS NAMES SPIRV)
+        find_static_library(STATIC_LIBS NAMES SPIRV-Tools)
+        find_static_library(STATIC_LIBS NAMES SPIRV-Tools-opt)
+        find_static_library(STATIC_LIBS NAMES MachineIndependent)
+        find_static_library(STATIC_LIBS NAMES GenericCodeGen)
+    endif()
+
+    find_static_library(STATIC_LIBS NAMES z)
+
+    add_custom_command(
+        TARGET mbgl-core
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E env
+            LD=${ARMERGE_LD}
+            OBJCOPY=${ARMERGE_OBJCOPY}
+            RANLIB=${ARMERGE_RANLIB}
+            ${ARMERGE} --keep-symbols 'mbgl.*' --keep-symbols '.*mln.*' --output libmbgl-core-amalgam.a
+                $<TARGET_FILE:mbgl-core>
+                $<TARGET_FILE:mbgl-freetype>
+                $<TARGET_FILE:mbgl-vendor-csscolorparser>
+                $<TARGET_FILE:mbgl-harfbuzz>
+                $<TARGET_FILE:mbgl-vendor-parsedate>
+                $<TARGET_FILE:mbgl-vendor-sqlite>
+                $<TARGET_FILE:mbgl-vendor-icu>
+                ${STATIC_LIBS}
+    )
+endif()
