@@ -78,7 +78,9 @@ LayerManagerDefault::LayerManagerDefault() {
 #if !defined(MBGL_LAYER_HEATMAP_DISABLE_ALL)
     addLayerType(std::make_unique<HeatmapLayerFactory>());
 #endif
-#ifdef MLN_RENDER_BACKEND_OPENGL
+// WebGPU custom layers get the backend-independent render parameters (camera and projection
+// matrices) but no command encoder: enough for hosts that draw elsewhere in step with the map.
+#if defined(MLN_RENDER_BACKEND_OPENGL) || defined(MLN_RENDER_BACKEND_WEBGPU)
 #if !defined(MBGL_LAYER_CUSTOM_DISABLE_ALL)
     addLayerType(std::make_unique<CustomLayerFactory>());
 #endif
