@@ -364,7 +364,11 @@ if(NOT "${ARMERGE}" STREQUAL "ARMERGE-NOTFOUND")
         find_static_library(STATIC_LIBS NAMES GenericCodeGen)
     endif()
 
-    find_static_library(STATIC_LIBS NAMES z)
+    # The FFI consumer links the system libz.so itself; the NDK's static libz.a is LLVM bitcode
+    # from r27 on, which armerge can't merge.
+    if(NOT MLN_WEBGPU_IMPL_FFI)
+        find_static_library(STATIC_LIBS NAMES z)
+    endif()
 
     add_custom_command(
         TARGET mbgl-core
