@@ -119,14 +119,19 @@ RenderPass::RenderPass(CommandEncoder& commandEncoder_, const char* name, const 
 #endif
     }
 
+    // A pass that clears depth/stencil is the frame's main pass ("main buffer", see renderer_impl):
+    // it runs after every render-target pass and nothing loads its depth/stencil afterwards, so they
+    // are discarded instead of stored. On a tiled GPU storing writes the whole buffer back to memory
+    // every frame (~0.4 ms on an Adreno 618 at 1080x2400). A pass that loads depth (render targets)
+    // keeps storing it.
     WGPURenderPassDepthStencilAttachment depthAttachment = {};
     depthAttachment.depthLoadOp = descriptor.clearDepth ? WGPULoadOp_Clear : WGPULoadOp_Load;
-    depthAttachment.depthStoreOp = WGPUStoreOp_Store;
+    depthAttachment.depthStoreOp = descriptor.clearDepth ? WGPUStoreOp_Discard : WGPUStoreOp_Store;
     depthAttachment.depthClearValue = descriptor.clearDepth ? descriptor.clearDepth.value() : 1.0f;
     depthAttachment.depthReadOnly = false;
     if (descriptor.clearStencil) {
         depthAttachment.stencilLoadOp = WGPULoadOp_Clear;
-        depthAttachment.stencilStoreOp = WGPUStoreOp_Store;
+        depthAttachment.stencilStoreOp = WGPUStoreOp_Discard;
         depthAttachment.stencilClearValue = static_cast<uint32_t>(descriptor.clearStencil.value());
     } else {
         depthAttachment.stencilLoadOp = WGPULoadOp_Undefined;
